@@ -1,0 +1,5 @@
+# Ignore the archives directory
+archives/*
+
+# Exception for .gitkeep file in archives directory
+!archives/.gitkeep
