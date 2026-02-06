@@ -31,10 +31,10 @@ variable "vpc_config" {
   nullable = true
 }
 
-variable "hosted_zone_ids" {
-  description = "A list of Route53 hosted zone IDs that contain the domains the Lambda function should be able to create certificates for."
-  type        = list(string)
-  default     = []
+variable "hosted_zone_ids_to_iam_role_arns" {
+  description = "A mapping of Route53 hosted zone IDs that contain the domains the Lambda function should be able to create certificates for, to IAM role ARNs for a role that has permissions to modify records in that zone. If the role ARN is null, the Lambda's role will be used."
+  type        = map(string)
+  default     = {}
   nullable    = false
 }
 
@@ -50,13 +50,6 @@ variable "permitted_domains" {
   type        = list(string)
   default     = null
   nullable    = true
-}
-
-variable "route53_in_separate_account" {
-  description = "Whether the Route53 hosted zones are managed in a separate AWS account. If true, the `aws.route53` provider must be in that account."
-  type        = bool
-  default     = false
-  nullable    = false
 }
 
 variable "cloudwatch_log_retention_days" {
