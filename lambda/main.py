@@ -13,14 +13,16 @@ log.setLevel(logging.INFO)
 
 execution_env = os.environ.get("AWS_EXECUTION_ENV", "")
 runtime = execution_env.removeprefix("AWS_Lambda_")
-hosted_zone_ids = json.loads(os.environ.get("HOSTED_ZONE_IDS", "[]"))
-route53_iam_role = os.environ.get("ROUTE53_IAM_ROLE", None)
+hosted_zone_ids_to_iam_role_arns = json.loads(
+    os.environ.get("HOSTED_ZONE_IDS_TO_IAM_ROLE_ARNS", "{}")
+)
 route53_policy = os.environ.get("ROUTE53_POLICY", "")
 default_key_type = os.environ["DEFAULT_KEY_TYPE"]
 default_key_size = int(os.environ["DEFAULT_KEY_SIZE"])
 
 # Create an STS client
 sts_client = boto3.client("sts")
+route53_client_default = boto3.client("route53")
 
 
 def deduplicate_domains(domains):
@@ -66,15 +68,19 @@ def lambda_handler(event, context):
         dns_sans=domains,
     )
 
-    route53_client = route53.get_client(
-        role_arn=route53_iam_role, policy=route53_policy
-    )
-
     hosted_zones_by_name = {}
-    for zone_id in hosted_zone_ids:
+    for zone_id, iam_role_arn in hosted_zone_ids_to_iam_role_arns.items():
+        route53_client = (
+            route53_client_default
+            if iam_role_arn is None
+            else route53.get_client(role_arn=iam_role_arn, policy=route53_policy)
+        )
         log.info("Getting hosted zone %s", zone_id)
         response = route53_client.get_hosted_zone(Id=zone_id)
-        hosted_zones_by_name[response["HostedZone"]["Name"].rstrip(".")] = zone_id
+        hosted_zones_by_name[response["HostedZone"]["Name"].rstrip(".")] = {
+            "zone_id": zone_id,
+            "iam_role_arn": iam_role_arn,
+        }
 
     os.environ["HOSTED_ZONES"] = json.dumps(hosted_zones_by_name)
     log.info("Hosted zones: \n%s", os.environ["HOSTED_ZONES"])

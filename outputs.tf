@@ -7,3 +7,8 @@ output "lambda_module" {
   description = "The entire Invicton-Labs/terraform-aws-lambda-set module, so various parameters can be accessed outside this module."
   value       = module.lambda_certbot
 }
+
+output "iam_role_arn" {
+  description = "The ARN of the IAM role created for the Lambda to assume."
+  value       = module.lambda_certbot.iam_role_arn
+}
