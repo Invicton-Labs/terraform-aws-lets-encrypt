@@ -14,8 +14,8 @@ resource "tls_self_signed_cert" "dummy" {
   subject {
     // This doesn't matter, it's just a placeholder for the ACM cert
     // to be created so we know the ARN in advance.
-    common_name  = "example.com"
-    organization = "ACME Examples, Inc"
+    common_name  = "placeholder.net"
+    organization = "Let's Encrypt Placeholder"
   }
   // Set it to 1000 years so it doesn't try to re-create itself
   validity_period_hours = 24 * 365 * 100

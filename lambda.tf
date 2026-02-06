@@ -12,82 +12,6 @@ resource "random_id" "lambda" {
 locals {
   function_name = module.function_name_provided.provided ? var.function_name : "lets-encrypt-${random_id.lambda[0].hex}"
   runtime       = "python${var.lambda_python_version}"
-  record_prefix = "_acme-challenge"
-}
-
-// Design a policy that grants the necessary permissions to write the Route53 records
-data "aws_iam_policy_document" "route53_core" {
-  statement {
-    actions = [
-      "route53:ChangeResourceRecordSets"
-    ]
-    resources = [
-      // Grant it permission on each hosted zone ID provided, but only if no specific role ARN is provided for that zone
-      for id, role_arn in var.hosted_zone_ids_to_iam_role_arns :
-      "arn:aws:route53:::hostedzone/${id}"
-    ]
-    // Restrict it to records starting with "_acme-challenge.", which Let's Encrypt uses for validation
-    condition {
-      test     = "ForAllValues:StringLike"
-      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
-      values = var.permitted_domains != null ? [
-        for domain in var.permitted_domains :
-        "${local.record_prefix}.${domain}"
-        ] : [
-        "${local.record_prefix}.*"
-      ]
-    }
-    // Restrict it to TXT records only
-    condition {
-      test     = "ForAllValues:StringEquals"
-      variable = "route53:ChangeResourceRecordSetsRecordTypes"
-      values = [
-        "TXT"
-      ]
-    }
-  }
-  // Allow reading hosted zone info
-  statement {
-    actions = [
-      "route53:GetHostedZone",
-    ]
-    resources = [
-      // Grant it permission on each hosted zone ID provided, but only if no specific role ARN is provided for that zone
-      for id, role_arn in var.hosted_zone_ids_to_iam_role_arns :
-      "arn:aws:route53:::hostedzone/${id}"
-    ]
-  }
-
-  // Allow assuming the IAM roles
-  statement {
-    actions = [
-      "sts:AssumeRole",
-    ]
-    resources = [
-      for id, role_arn in var.hosted_zone_ids_to_iam_role_arns :
-      role_arn
-      if role_arn != null
-    ]
-  }
-}
-
-// Design a policy that grants the necessary permissions to write the Route53 records
-data "aws_iam_policy_document" "route53" {
-  source_policy_documents = [
-    data.aws_iam_policy_document.route53_core.json
-  ]
-
-  // Allow assuming the IAM roles
-  statement {
-    actions = [
-      "sts:AssumeRole",
-    ]
-    resources = [
-      for id, role_arn in var.hosted_zone_ids_to_iam_role_arns :
-      role_arn
-      if role_arn != null
-    ]
-  }
 }
 
 // Get the Certbot layer
@@ -144,11 +68,7 @@ module "lambda_certbot" {
   }
   role_policies = flatten([
     // If it's in a separate account, we assume a different role with the permissions, so we don't need the permissions here
-    data.aws_iam_policy_document.route53.json,
-    [
-      for policy in data.aws_iam_policy_document.assume_route53 :
-      policy.json
-    ]
+    data.aws_iam_policy_document.route53.json
   ])
   source_directory               = "${path.module}/lambda"
   archive_output_directory       = "${path.module}/archives/"

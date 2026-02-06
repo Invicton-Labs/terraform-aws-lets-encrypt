@@ -46,7 +46,7 @@ variable "lambda_python_version" {
 }
 
 variable "permitted_domains" {
-  description = "A list of domains that the Lambda should have permissions to get certificates for. If not provided, any domain that falls within any of the permitted hosted zones will be allowed. Note that '*' and '?' have special meanings as they do in IAM policies; using \"*.example.com\" will allow the Lambda to get certificates for \"foo.example.com\", \"bar.example.com\", etc. Actual wildcard domains are always permitted, as Let's Encrypt does not consider that to be a separate validation from the parent domain."
+  description = "A list of domains that the Lambda should have permissions to get certificates for. Only applies for domains where no dedicated IAM role ARN is provided. If not provided, any domain that falls within any of the permitted hosted zones will be allowed. Note that '*' and '?' have special meanings as they do in IAM policies; using \"*.example.com\" will allow the Lambda to get certificates for \"foo.example.com\", \"bar.example.com\", etc. Actual wildcard domains are always permitted, as Let's Encrypt does not consider that to be a separate validation from the parent domain."
   type        = list(string)
   default     = null
   nullable    = true
