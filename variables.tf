@@ -31,10 +31,10 @@ variable "vpc_config" {
   nullable = true
 }
 
-variable "hosted_zone_ids" {
-  description = "A list of Route53 hosted zone IDs that contain the domains the Lambda function should be able to create certificates for."
-  type        = list(string)
-  default     = []
+variable "hosted_zone_ids_to_iam_role_arns" {
+  description = "A mapping of Route53 hosted zone IDs that contain the domains the Lambda function should be able to create certificates for, to IAM role ARNs for a role that has permissions to modify records in that zone. If the role ARN is null, the Lambda's role will be used."
+  type        = map(string)
+  default     = {}
   nullable    = false
 }
 
@@ -46,17 +46,10 @@ variable "lambda_python_version" {
 }
 
 variable "permitted_domains" {
-  description = "A list of domains that the Lambda should have permissions to get certificates for. If not provided, any domain that falls within any of the permitted hosted zones will be allowed. Note that '*' and '?' have special meanings as they do in IAM policies; using \"*.example.com\" will allow the Lambda to get certificates for \"foo.example.com\", \"bar.example.com\", etc. Actual wildcard domains are always permitted, as Let's Encrypt does not consider that to be a separate validation from the parent domain."
+  description = "A list of domains that the Lambda should have permissions to get certificates for. Only applies for domains where no dedicated IAM role ARN is provided. If not provided, any domain that falls within any of the permitted hosted zones will be allowed. Note that '*' and '?' have special meanings as they do in IAM policies; using \"*.example.com\" will allow the Lambda to get certificates for \"foo.example.com\", \"bar.example.com\", etc. Actual wildcard domains are always permitted, as Let's Encrypt does not consider that to be a separate validation from the parent domain."
   type        = list(string)
   default     = null
   nullable    = true
-}
-
-variable "route53_in_separate_account" {
-  description = "Whether the Route53 hosted zones are managed in a separate AWS account. If true, the `aws.route53` provider must be in that account."
-  type        = bool
-  default     = false
-  nullable    = false
 }
 
 variable "cloudwatch_log_retention_days" {

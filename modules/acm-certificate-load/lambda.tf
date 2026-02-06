@@ -28,7 +28,7 @@ module "lambda_acm" {
     runtime       = local.runtime
     architectures = [var.architecture]
     memory_size   = 256
-    timeout       = 600 # TODO: reduce
+    timeout       = 600
     publish       = false
     vpc_config    = var.vpc_config
     environment = {

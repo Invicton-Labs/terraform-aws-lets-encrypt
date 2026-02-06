@@ -12,95 +12,6 @@ resource "random_id" "lambda" {
 locals {
   function_name = module.function_name_provided.provided ? var.function_name : "lets-encrypt-${random_id.lambda[0].hex}"
   runtime       = "python${var.lambda_python_version}"
-  record_prefix = "_acme-challenge"
-}
-
-// Design a policy that grants the necessary permissions to write the Route53 records
-data "aws_iam_policy_document" "route53" {
-  statement {
-    actions = [
-      "route53:ChangeResourceRecordSets"
-    ]
-    resources = [
-      // Grant it permission on each hosted zone ID provided
-      for id in var.hosted_zone_ids : "arn:aws:route53:::hostedzone/${id}"
-    ]
-    // Restrict it to records starting with "_acme-challenge.", which Let's Encrypt uses for validation
-    condition {
-      test     = "ForAllValues:StringLike"
-      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
-      values = var.permitted_domains != null ? [
-        for domain in var.permitted_domains :
-        "${local.record_prefix}.${domain}"
-        ] : [
-        "${local.record_prefix}.*"
-      ]
-    }
-    // Restrict it to TXT records only
-    condition {
-      test     = "ForAllValues:StringEquals"
-      variable = "route53:ChangeResourceRecordSetsRecordTypes"
-      values = [
-        "TXT"
-      ]
-    }
-  }
-  // Allow reading hosted zone info
-  statement {
-    actions = [
-      "route53:GetHostedZone",
-    ]
-    resources = [
-      // Grant it permission on each hosted zone ID provided
-      for id in var.hosted_zone_ids : "arn:aws:route53:::hostedzone/${id}"
-    ]
-  }
-}
-
-// A policy that allows the P3 prod account to assume the role
-data "aws_iam_policy_document" "route53_assume" {
-  statement {
-    actions = [
-      "sts:AssumeRole"
-    ]
-    principals {
-      type = "AWS"
-      identifiers = [
-        // Allow the lambda role to assume the Route53 role
-        module.lambda_certbot.iam_role_arn
-      ]
-    }
-  }
-}
-
-// A role that is able to update Route53 (might be in a different account)
-resource "aws_iam_role" "route53" {
-  provider           = aws.route53
-  count              = var.route53_in_separate_account ? 1 : 0
-  name               = "${local.function_name}-route53"
-  assume_role_policy = data.aws_iam_policy_document.route53_assume.json
-}
-
-resource "aws_iam_role_policy" "route53_policy" {
-  provider = aws.route53
-  count    = length(aws_iam_role.route53)
-  name     = "route53-access"
-  role     = aws_iam_role.route53[0].name
-  policy   = data.aws_iam_policy_document.route53.json
-}
-
-// A policy that allows assuming the Route53 role
-data "aws_iam_policy_document" "assume_route53" {
-  count = length(aws_iam_role.route53)
-  // Allow reading hosted zone info
-  statement {
-    actions = [
-      "sts:AssumeRole",
-    ]
-    resources = [
-      aws_iam_role.route53[0].arn
-    ]
-  }
 }
 
 // Get the Certbot layer
@@ -142,13 +53,12 @@ module "lambda_certbot" {
     vpc_config    = var.vpc_config
     environment = {
       variables = {
-        HOSTED_ZONE_IDS               = jsonencode(var.hosted_zone_ids)
-        ROUTE53_IAM_ROLE              = var.route53_in_separate_account ? aws_iam_role.route53[0].arn : ""
-        ROUTE53_POLICY                = data.aws_iam_policy_document.route53.json
-        RECORD_PREFIX                 = local.record_prefix
-        DNS_PROPAGATION_DELAY_SECONDS = var.dns_propagation_delay_seconds
-        DEFAULT_KEY_TYPE              = var.default_key_type
-        DEFAULT_KEY_SIZE              = var.default_key_size
+        HOSTED_ZONE_IDS_TO_IAM_ROLE_ARNS = jsonencode(var.hosted_zone_ids_to_iam_role_arns)
+        ROUTE53_POLICY                   = data.aws_iam_policy_document.route53_core.json
+        RECORD_PREFIX                    = local.record_prefix
+        DNS_PROPAGATION_DELAY_SECONDS    = var.dns_propagation_delay_seconds
+        DEFAULT_KEY_TYPE                 = var.default_key_type
+        DEFAULT_KEY_SIZE                 = var.default_key_size
       }
     }
     layers = [
@@ -158,11 +68,7 @@ module "lambda_certbot" {
   }
   role_policies = flatten([
     // If it's in a separate account, we assume a different role with the permissions, so we don't need the permissions here
-    var.route53_in_separate_account ? [] : [data.aws_iam_policy_document.route53.json],
-    [
-      for policy in data.aws_iam_policy_document.assume_route53 :
-      policy.json
-    ]
+    data.aws_iam_policy_document.route53.json
   ])
   source_directory               = "${path.module}/lambda"
   archive_output_directory       = "${path.module}/archives/"
