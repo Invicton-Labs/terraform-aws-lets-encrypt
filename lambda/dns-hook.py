@@ -4,7 +4,6 @@ import json
 import time
 import logging
 import route53
-import boto3
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -20,74 +19,53 @@ certbot_all_domains = os.environ["CERTBOT_ALL_DOMAINS"]
 record_prefix = os.environ["RECORD_PREFIX"]
 dns_propagation_delay_seconds = float(os.environ["DNS_PROPAGATION_DELAY_SECONDS"])
 
-route53_client_default = boto3.client("route53")
-
-
 if __name__ == "__main__":
-    try:
-        all_domains = [domain.strip() for domain in certbot_all_domains.split(",")]
-        challenge_idx = len(all_domains) - certbot_remaining_challenges - 1
-        log.info("Challenge index: %d", challenge_idx)
-        log.info("CERTBOT_DOMAIN: %s", certbot_domain)
-        log.info("CERTBOT_VALIDATION: %s", certbot_validation)
-        log.info("CERTBOT_REMAINING_CHALLENGES: %d", certbot_remaining_challenges)
-        log.info("CERTBOT_ALL_DOMAINS: %s", certbot_all_domains)
+    all_domains = [domain.strip() for domain in certbot_all_domains.split(",")]
+    challenge_idx = len(all_domains) - certbot_remaining_challenges - 1
+    log.info("Challenge index: %d", challenge_idx)
+    log.info("CERTBOT_DOMAIN: %s", certbot_domain)
+    log.info("CERTBOT_VALIDATION: %s", certbot_validation)
+    log.info("CERTBOT_REMAINING_CHALLENGES: %d", certbot_remaining_challenges)
+    log.info("CERTBOT_ALL_DOMAINS: %s", certbot_all_domains)
+    
+    with open(records_file, 'r') as file:
+        records = json.load(file)
 
-        with open(records_file, "r") as file:
-            records = json.load(file)
+    if certbot_domain in records:
+        records[certbot_domain].append(certbot_validation)
+    else:
+        records[certbot_domain] = [certbot_validation]
 
-        if certbot_domain in records:
-            records[certbot_domain].append(certbot_validation)
-        else:
-            records[certbot_domain] = [certbot_validation]
+    # There are still more challenges, so just write the file and exit
+    with open(records_file, 'w') as file:
+        json.dump(records, file)
 
-        # There are still more challenges, so just write the file and exit
-        with open(records_file, "w") as file:
-            json.dump(records, file)
+    log.info("New records file: \n%s", json.dumps(records, indent=2))
 
-        log.info("New records file: \n%s", json.dumps(records, indent=2))
+    if certbot_remaining_challenges != 0:
+        exit(0)
 
-        if certbot_remaining_challenges != 0:
-            exit(0)
+    # This is the last challenge, it's time to write to Route53
+    route53_client = route53.get_client(role_arn=route53_iam_role, policy=route53_policy)
 
-        # This is the last challenge, it's time to write to Route53
-        for domain, tokens in records.items():
-            zone = route53.get_hosted_zone_id(hosted_zones, domain)
-            zone_id = zone["zone_id"]
-            iam_role_arn = zone["iam_role_arn"]
-            log.info(
-                "Using hosted zone ID %s with IAM role ARN %s for domain %s",
-                zone_id,
-                iam_role_arn,
-                domain,
-            )
+    for domain, tokens in records.items():
+        zone_id = route53.get_hosted_zone_id(hosted_zones, domain)
 
-            route53_client = (
-                route53_client_default
-                if iam_role_arn is None
-                else route53.get_client(role_arn=iam_role_arn, policy=route53_policy)
-            )
-
-            route53_client.change_resource_record_sets(
-                HostedZoneId=zone_id,
-                ChangeBatch={
-                    "Changes": [
-                        {
-                            "Action": "UPSERT",
-                            "ResourceRecordSet": {
-                                "Name": f"{record_prefix}.{domain}",
-                                "Type": "TXT",
-                                "TTL": 0,
-                                "ResourceRecords": [
-                                    {"Value": f'"{token}"'} for token in tokens
-                                ],
-                            },
+        route53_client.change_resource_record_sets(
+            HostedZoneId=zone_id,
+            ChangeBatch={
+                'Changes': [
+                    {
+                        'Action': 'UPSERT',
+                        'ResourceRecordSet': {
+                            'Name': f"{record_prefix}.{domain}",
+                            'Type': 'TXT',
+                            'TTL': 0,
+                            'ResourceRecords': [{'Value': f'"{token}"'} for token in tokens]
                         }
-                    ]
-                },
-            )
+                    }
+                ]
+            }
+        )
 
-        time.sleep(dns_propagation_delay_seconds)
-    except Exception as e:
-        log.error("Error in dns-hook: %s", str(e))
-        exit(1)
+    time.sleep(dns_propagation_delay_seconds)
